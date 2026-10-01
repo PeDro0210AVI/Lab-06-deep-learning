@@ -36,6 +36,7 @@
                   torch
                   torchvision
                   torchinfo
+                  python-docx
                   pycatch22
                   kagglehub
                   datasets

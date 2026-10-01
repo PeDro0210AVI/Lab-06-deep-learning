@@ -1,0 +1,11 @@
+data/
+nootebooks/data/
+nootebooks/results/
+.claude/
+.direnv/
+.ipynb_checkpoints/
+report/*.aux
+report/*.log
+report/*.out
+__pycache__/
+*.pyc

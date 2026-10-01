@@ -1,0 +1,4 @@
+modelo,n_train_100,n_train_10,test_acc_100,test_acc_10,test_f1_100,test_f1_10,delta_f1
+CNN-scratch,1500,600,0.341,0.101,0.3144,0.0204,-0.2941
+VGG16-FeatureExtractor,1500,600,0.571,0.481,0.5674,0.4582,-0.1092
+VGG16-FineTuning,1500,600,0.553,0.475,0.5504,0.4494,-0.1011

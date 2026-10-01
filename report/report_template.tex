@@ -1,0 +1,124 @@
+\documentclass[9pt]{article}
+\usepackage[a4paper,margin=1.3cm]{geometry}
+\usepackage[spanish]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=1.1em}
+\captionsetup{font=scriptsize, labelfont=bf}
+\renewcommand{\arraystretch}{1.05}
+\pagenumbering{gobble}
+
+\title{\vspace{-1.6em}\textbf{Laboratorio 6 --- Transfer Learning y Fine-Tuning}\vspace{-0.6em}}
+\author{CC3092 - Deep Learning y Sistemas Inteligentes}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-2.3em}
+
+\section*{1. Investigación: transfer learning en PyTorch}
+\footnotesize
+\texttt{torchvision.models.vgg16} construye la arquitectura VGG-16; pasarle
+\texttt{weights=VGG16\_Weights.IMAGENET1K\_V1} carga los pesos preentrenados en ImageNet, y
+\texttt{weights.transforms()} expone el preprocesamiento exacto usado en ese preentrenamiento
+(resize 256 + center-crop 224 + normalización con medias/std de ImageNet). El modelo se compone de
+\texttt{model.features} (13 capas convolucionales, agrupadas en 5 bloques separados por
+\texttt{MaxPool2d}), \texttt{model.avgpool} (\texttt{AdaptiveAvgPool2d} a $7\times7$, lo que permite
+usar resoluciones de entrada distintas a $224\times224$) y \texttt{model.classifier} (3 capas
+densas $4096\to4096\to1000$, reemplazamos la última por una de 10 salidas). Cada \texttt{nn.Parameter}
+tiene un flag \texttt{requires\_grad}; poniéndolo en \texttt{False} sobre todos los parámetros de un
+bloque se congela (no recibe gradiente ni se actualiza, y PyTorch evita construir el grafo de
+autograd para ese cómputo). \texttt{model.train()}/\texttt{model.eval()} cambian el comportamiento
+de \texttt{Dropout}/\texttt{BatchNorm} entre entrenamiento e inferencia; \texttt{torch.no\_grad()}
+desactiva la construcción del grafo de autograd (se usa en evaluación y, en este trabajo, también
+para forzar el forward de las capas congeladas sin overhead de autograd --- evitarlo resultó
+$\sim$4$\times$ más lento en nuestras pruebas sobre el backend \texttt{mps}). Los
+\texttt{optimizer.param\_groups} permiten asignar learning rates distintos por capa (backbone con lr
+bajo, clasificador con lr alto) al mismo optimizador. \texttt{torchinfo.summary} reporta, vía un
+forward simbólico, parámetros y MACs (\emph{multiply-accumulates}) por capa; cada MAC $\approx$ 2
+FLOPs, por lo que FLOPs $\approx 2\times$MACs. Los parámetros \emph{totales} son todos los pesos de
+la arquitectura; los \emph{entrenables} son el subconjunto con \texttt{requires\_grad=True}
+(el optimizador solo actualiza esos). En un servidor con GPU NVIDIA, \texttt{torch.cuda.max\_memory\_%
+allocated()} y \texttt{torch.cuda.synchronize()} miden memoria pico y sincronizan el cómputo
+asíncrono de la GPU; en esta máquina (Apple Silicon, sin CUDA) se usaron los equivalentes del
+backend \texttt{mps}: \texttt{torch.mps.current\_allocated\_memory()} (muestreado por batch para
+aproximar el pico) y \texttt{torch.mps.synchronize()}.
+
+\section*{2. Configuración experimental}
+\footnotesize
+CIFAR-10 (50k train / 10k test, 10 clases balanceadas, imágenes $32\times32\times3$). Split
+45{,}000/5{,}000 estratificado para entrenamiento/validación; test oficial reservado para la
+evaluación final. Para esta corrida (orientada a validar rápidamente el pipeline completo en una
+laptop sin GPU dedicada) se entrenó sobre subconjuntos estratificados pequeños de esos splits
+(1{,}500 train / 800 val / 1{,}000 test) y pocos epochs por iteración; el notebook y el código
+soportan directamente escalar estos tamaños al dataset completo con más tiempo de cómputo. CNN
+desde cero: resolución nativa $32\times32$, normalización con medias/std calculadas sobre
+CIFAR-10, augmentation (\texttt{RandomCrop} + \texttt{RandomHorizontalFlip}) solo en entrenamiento.
+VGG-16 (feature extractor y fine-tuning): redimensionado a $\mathbf{48\times48}$ (en vez de
+$224\times224$, por restricciones de cómputo --- $224\times224$ multiplica los píxeles nativos por
+49$\times$, $48\times48$ por 2.25$\times$) y normalización con medias/std de ImageNet. Hardware:
+Mac con Apple Silicon; esta corrida en particular se ejecutó sobre CPU (en vez del backend
+\texttt{mps}) para evitar contención térmica tras corridas previas.
+
+\section*{3. Resultados de las iteraciones (val.)}
+\scriptsize
+\begin{center}
+\begin{tabular}{p{2.6cm}p{4.6cm}rrrr}
+\toprule
+\textbf{Arquitectura} & \textbf{Iteración} & \textbf{Params (entr.)} & \textbf{Val Acc} & \textbf{Val F1} & \textbf{t/epoch (s)} \\
+\midrule
+ITERATIONS_TABLE_ROWS
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{4. Comparación de rendimiento y recursos (mejor config. por modelo)}
+\scriptsize
+\begin{center}
+\begin{tabular}{p{2.9cm}rrrrrr}
+\toprule
+\textbf{Modelo} & \textbf{Params total} & \textbf{Params entr.} & \textbf{FLOPs/img} & \textbf{Latencia (ms)} & \textbf{Epochs$\to$mejor} & \textbf{Test F1} \\
+\midrule
+COMPARISON_TABLE_ROWS
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{-0.3em}
+\noindent\textbf{Experimento de cantidad de datos (10\% vs. 100\% del train):}\\
+DATA_QUANTITY_LINE
+
+\begin{center}
+\includegraphics[width=0.48\linewidth]{FIG_VAL_ACC_VS_TIME}
+\includegraphics[width=0.48\linewidth]{FIG_F1_VS_FLOPS}
+\end{center}
+
+\section*{5. Discusión y análisis}
+\footnotesize
+\textbf{Mejor modelo en test:} BEST_MODEL_DISCUSSION
+
+\textbf{Desempeño vs. recursos:} TRADEOFF_DISCUSSION
+
+\textbf{Features preentrenadas a $32\times32$:} RESIZE_DISCUSSION
+
+\textbf{Fine-tuning (bloques descongelados y lr del backbone):} FINETUNE_DISCUSSION
+
+\textbf{Efecto de la cantidad de datos:} DATA_QUANTITY_DISCUSSION
+
+\textbf{Matrices de confusión:} CONFUSION_DISCUSSION
+
+\textbf{Despliegue (servidor GPU vs. móvil):} DEPLOYMENT_DISCUSSION
+
+\section*{6. Conclusiones}
+\footnotesize
+CONCLUSIONS_TEXT
+
+\vspace{0.3em}
+\noindent\footnotesize\textbf{Repositorio:} \url{REPO_URL}
+
+\end{document}
